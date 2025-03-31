@@ -45,7 +45,7 @@ dataset = ClevrerDataset(
     frames_root='frame_captures',
     json_path='train.json',
     transform=transform,
-    question_type="counterfactual"
+    question_type="all"
 )
 
 train_ds, val_ds = dataset.train_test_split(test_size=0.2)
