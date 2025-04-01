@@ -12,7 +12,14 @@ from huggingface_hub import login
 import os
 import wandb
 
-# torch.cuda.set_device(2)
+from datetime import datetime
+import pytz
+
+ist = pytz.timezone('Asia/Kolkata')
+now_ist = datetime.now(ist)
+
+# print("Current time in IST:", now_ist.strftime("%Y-%m-%d %H:%M:%S %Z%z"))
+
 
 def setup_wandb(project_name, run_name):
     try:
@@ -32,7 +39,7 @@ def setup_wandb(project_name, run_name):
     except Exception as e:
         print(f"Error initializing WandB run: {e}")
 
-# setup_wandb(project_name="Physical_Reasoning", run_name="test")
+setup_wandb(project_name="Physical_Reasoning", run_name=now_ist.strftime("%m-%d %H:%M"))
 
 login(token="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")
 
