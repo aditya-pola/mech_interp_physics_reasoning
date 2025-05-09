@@ -1,3 +1,6 @@
+import os
+os.environ["CUDA_VISIBLE_DEVICES"]='0'
+
 # from transformers import PaliGemmaProcessor, PaliGemmaForConditionalGeneration
 from processing_paligemma import PaliGemmaProcessor
 from modeling_paligemma import PaliGemmaForConditionalGeneration
