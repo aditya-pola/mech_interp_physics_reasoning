@@ -101,7 +101,7 @@ def clevrer_collate_fn(examples):
         do_rescale=False,
         padding="longest",
         suffix=labels,
-    )
+    ).to(DTYPE)
     # ).to(device, DTYPE)
 
     return tokens
