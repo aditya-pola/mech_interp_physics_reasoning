@@ -1,10 +1,12 @@
-from transformers import PaliGemmaProcessor, PaliGemmaForConditionalGeneration
+# from transformers import PaliGemmaProcessor, PaliGemmaForConditionalGeneration
+from processing_paligemma import PaliGemmaProcessor
+from modeling_paligemma import PaliGemmaForConditionalGeneration
 import torch
 from torch.utils.data import DataLoader
 from data import ClevrerDataset
 import torchvision.transforms as transforms
 import numpy as np
-from transformers import BitsAndBytesConfig, PaliGemmaForConditionalGeneration
+from transformers import BitsAndBytesConfig
 from peft import get_peft_model, LoraConfig
 from transformers import Trainer
 from transformers import TrainingArguments
@@ -67,7 +69,7 @@ lora_config = LoraConfig(
 )
 
 # device = "cuda:2" if torch.cuda.is_available() else "cpu"
-device = "cuda"
+# device = "cuda"
 # model = PaliGemmaForConditionalGeneration.from_pretrained(model_id, device_map="auto", quantization_config=bnb_config)
 model = PaliGemmaForConditionalGeneration.from_pretrained(model_id, device_map="auto")#, quantization_config=bnb_config)
 model.enable_input_require_grads()
