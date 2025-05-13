@@ -77,7 +77,7 @@
 from transformers import PaliGemmaProcessor, PaliGemmaForConditionalGeneration
 import torch
 from torch.utils.data import DataLoader
-from data import ClevrerDataset
+from src.data import ClevrerDataset
 import torchvision.transforms as transforms
 import numpy as np
 

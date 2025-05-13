@@ -1,12 +1,12 @@
-import os
-os.environ["CUDA_VISIBLE_DEVICES"]='0'
+# import os
+# os.environ["CUDA_VISIBLE_DEVICES"]='0'
 
 # from transformers import PaliGemmaProcessor, PaliGemmaForConditionalGeneration
-from processing_paligemma import PaliGemmaProcessor
-from modeling_paligemma import PaliGemmaForConditionalGeneration
+from src.processing_paligemma import PaliGemmaProcessor
+from src.modeling_paligemma import PaliGemmaForConditionalGeneration
 import torch
 from torch.utils.data import DataLoader
-from data import ClevrerDataset
+from src.data import ClevrerDataset
 import torchvision.transforms as transforms
 import numpy as np
 from transformers import BitsAndBytesConfig
@@ -49,6 +49,7 @@ setup_wandb(project_name="Physical_Reasoning", run_name=now_ist.strftime("%m-%d 
 login(token="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")
 
 transform = transforms.Compose([
+    # transforms.Resize((224, 224)),
     transforms.Resize((448, 448)),
     transforms.ToTensor(),
 ])
@@ -62,12 +63,14 @@ dataset = ClevrerDataset(
 
 train_ds, val_ds = dataset.train_test_split(test_size=0.2)
 
+# model_id = "google/paligemma2-3b-mix-224"
 model_id = "google/paligemma2-3b-mix-448"
 bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16)
 
 lora_config = LoraConfig(
     r=16,
-    target_modules=["q_proj", "o_proj", "k_proj", "v_proj", "gate_proj", "up_proj", "down_proj", "fc1", "fc2", "linear", "patch_embedding", "position_embedding", "embed_tokens"],
+    # target_modules=["q_proj", "o_proj", "k_proj", "v_proj", "gate_proj", "up_proj", "down_proj", "fc1", "fc2", "linear", "patch_embedding", "position_embedding", "embed_tokens"],
+    target_modules=["q_proj", "o_proj", "k_proj", "v_proj", "gate_proj", "up_proj", "down_proj"],
     task_type="CAUSAL_LM",
 )
 
@@ -113,7 +116,7 @@ def clevrer_collate_fn(examples):
 args=TrainingArguments(
             num_train_epochs=3,
             remove_unused_columns=False,
-            per_device_train_batch_size=32,
+            per_device_train_batch_size=2,
             gradient_accumulation_steps=4,
             warmup_steps=2,
             learning_rate=5e-5,

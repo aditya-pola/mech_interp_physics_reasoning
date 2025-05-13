@@ -36,7 +36,7 @@ from transformers.utils import (
 from transformers.utils.deprecation import deprecate_kwarg
 from transformers.models.auto import AutoModel, AutoModelForCausalLM
 # from transformers.models.paligemma.configuration_paligemma import PaliGemmaConfig
-from configuration_paligemma import PaliGemmaConfig
+from src.configuration_paligemma import PaliGemmaConfig
 
 
 logger = logging.get_logger(__name__)
