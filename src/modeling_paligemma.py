@@ -416,9 +416,14 @@ class PaliGemmaForConditionalGeneration(PaliGemmaPreTrainedModel, GenerationMixi
         image_features = self.multi_modal_projector(selected_image_feature)
         image_features = image_features / (self.config.text_config.hidden_size**0.5)
 
+        # sliced_tensor = image_features[:, -128:, :]
+        # slices = [sliced_tensor[i].unsqueeze(0) for i in range(sliced_tensor.size(0))]
+        # image_features = torch.cat(slices, dim=1)
+
         # print("***********************************")
         # print("Pixelvalues " + str(pixel_values.shape))
         # print(image_features.shape)
+        # print(selected_image_feature.shape)
         # print("***********************************")
 
         return image_features
@@ -532,6 +537,8 @@ class PaliGemmaForConditionalGeneration(PaliGemmaPreTrainedModel, GenerationMixi
                     "tokens from image embeddings."
                 )
             image_features = image_features.to(inputs_embeds.device, inputs_embeds.dtype)
+            # image_features = image_features[:, -128:, :]
+
             inputs_embeds = inputs_embeds.masked_scatter(special_image_mask, image_features)
 
         # print("******************************")

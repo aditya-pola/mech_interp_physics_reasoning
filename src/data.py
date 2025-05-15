@@ -110,6 +110,8 @@ import string
 import random
 from collections import defaultdict
 
+NUM_FRAMES = 1
+
 class ClevrerDataset(Dataset):
     def __init__(self, frames_root, json_path, transform=None, question_type='all'):
         self.frames_root = frames_root
@@ -129,7 +131,7 @@ class ClevrerDataset(Dataset):
         self.samples = []
 
         for dirpath, _, filenames in os.walk(frames_root):
-            if all(f"frame_{i}.jpg" in filenames for i in range(8)):
+            if all(f"frame_{i}.jpg" in filenames for i in range(NUM_FRAMES)):
                 video_folder = os.path.basename(dirpath)
                 video_filename = f"{video_folder}.mp4"
 
@@ -174,7 +176,7 @@ class ClevrerDataset(Dataset):
 
         # Load 8 frames
         frames = []
-        for i in range(8):
+        for i in range(NUM_FRAMES):
             frame_path = os.path.join(video_dir, f"frame_{i}.jpg")
             image = Image.open(frame_path).convert("RGB")
             if self.transform:

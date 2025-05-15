@@ -1,5 +1,9 @@
-# import os
-# os.environ["CUDA_VISIBLE_DEVICES"]='0'
+import os
+os.environ["CUDA_VISIBLE_DEVICES"]='3'
+import sys
+parent_dir = os.path.abspath(os.path.join(os.getcwd(), ".."))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
 
 # from transformers import PaliGemmaProcessor, PaliGemmaForConditionalGeneration
 from src.processing_paligemma import PaliGemmaProcessor
@@ -55,8 +59,8 @@ transform = transforms.Compose([
 ])
 
 dataset = ClevrerDataset(
-    frames_root='frame_captures',
-    json_path='train.json',
+    frames_root='../frame_captures',
+    json_path='../train.json',
     transform=transform,
     question_type="all"
 )
@@ -70,14 +74,20 @@ bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.
 lora_config = LoraConfig(
     r=16,
     # target_modules=["q_proj", "o_proj", "k_proj", "v_proj", "gate_proj", "up_proj", "down_proj", "fc1", "fc2", "linear", "patch_embedding", "position_embedding", "embed_tokens"],
-    target_modules=["q_proj", "o_proj", "k_proj", "v_proj", "gate_proj", "up_proj", "down_proj"],
+    # target_modules=["q_proj", "o_proj", "k_proj", "v_proj", "gate_proj", "up_proj", "down_proj"],
+    target_modules=["q_proj",],
     task_type="CAUSAL_LM",
 )
+
+def get_device_map() -> str:
+    return 'cuda' if torch.cuda.is_available() else 'cpu'
+
+device = get_device_map()
 
 # device = "cuda:2" if torch.cuda.is_available() else "cpu"
 # device = "cuda"
 # model = PaliGemmaForConditionalGeneration.from_pretrained(model_id, device_map="auto", quantization_config=bnb_config)
-model = PaliGemmaForConditionalGeneration.from_pretrained(model_id, device_map="auto")#, quantization_config=bnb_config)
+model = PaliGemmaForConditionalGeneration.from_pretrained(model_id, device_map="auto", attn_implementation="eager")#, quantization_config=bnb_config)
 model.enable_input_require_grads()
 model = get_peft_model(model, lora_config)
 
@@ -94,7 +104,8 @@ def clevrer_collate_fn(examples):
         else:
             text = example["question"]
 
-        image_tokens = "<image> " * len(example['frames'])
+        # image_tokens = "<image> " * len(example['frames'])
+        image_tokens = "<image> "
         prompt = image_tokens + text + " en"
         prompts.append(prompt)
         labels.append(example['answer'])
@@ -116,7 +127,7 @@ def clevrer_collate_fn(examples):
 args=TrainingArguments(
             num_train_epochs=3,
             remove_unused_columns=False,
-            per_device_train_batch_size=2,
+            per_device_train_batch_size=1,
             gradient_accumulation_steps=4,
             warmup_steps=2,
             learning_rate=5e-5,
@@ -127,7 +138,7 @@ args=TrainingArguments(
             save_strategy="steps",
             save_steps=1000,
             save_total_limit=1,
-            output_dir="./paligemma_clevrer",
+            output_dir="../paligemma_clevrer",
             bf16=True,
             report_to="wandb",
             dataloader_pin_memory=False,
