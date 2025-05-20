@@ -20,6 +20,7 @@ from typing import List, Optional, Tuple, Union
 import torch
 import torch.utils.checkpoint
 from torch import nn
+import random
 
 from transformers.cache_utils import Cache, HybridCache, StaticCache
 from transformers.generation import GenerationMixin
@@ -294,11 +295,14 @@ PALIGEMMA_INPUTS_DOCSTRING = r"""
     PALIGEMMA_START_DOCSTRING,
 )
 class PaliGemmaForConditionalGeneration(PaliGemmaPreTrainedModel, GenerationMixin):
-    def __init__(self, config: PaliGemmaConfig):
+    def __init__(self, config: PaliGemmaConfig, token_compression:str="last", target_length:int=512):
         super().__init__(config)
         self.vision_tower = AutoModel.from_config(config=config.vision_config)
         self.multi_modal_projector = PaliGemmaMultiModalProjector(config)
         self.vocab_size = config.text_config.vocab_size
+
+        self.token_compression = token_compression #last, random, even_sampling, or average
+        self.target_length = target_length
 
         language_model = AutoModelForCausalLM.from_config(config=config.text_config)
 
@@ -401,32 +405,190 @@ class PaliGemmaForConditionalGeneration(PaliGemmaPreTrainedModel, GenerationMixi
 
         return causal_mask
 
+    # def get_image_features(self, pixel_values: torch.FloatTensor):
+    #     """
+    #     Obtains image last hidden states from the vision tower and apply multimodal projection.
+
+    #     Args:
+    #         pixel_values (`torch.FloatTensor]` of shape `(batch_size, channels, height, width)`)
+    #            The tensors corresponding to the input images.
+    #     Returns:
+    #         image_features (`torch.Tensor`): Image feature tensor of shape `(num_images, image_length, embed_dim)`).
+    #     """
+
+    #     with torch.no_grad():
+    #         image_outputs = self.vision_tower(pixel_values)
+    #         selected_image_feature = image_outputs.last_hidden_state
+    #         image_features = self.multi_modal_projector(selected_image_feature)
+    #         image_features = image_features / (self.config.text_config.hidden_size**0.5)
+
+    #     sliced_tensor = image_features[:, -128:, :]
+    #     slices = [sliced_tensor[i].unsqueeze(0) for i in range(sliced_tensor.size(0))]
+    #     image_features = torch.cat(slices, dim=1)
+
+    #     return_image_features = image_features.detach().clone()
+
+    #     # print("***********************************")
+    #     # print("Pixelvalues " + str(pixel_values.shape))
+    #     # print(selected_image_feature.shape)
+    #     # print(image_features.shape)
+    #     # print("***********************************")
+
+    #     del image_outputs
+    #     del selected_image_feature
+    #     del image_features
+    #     # del self.vision_tower
+
+    #     torch.cuda.empty_cache()
+
+    #     return return_image_features
+
+
     def get_image_features(self, pixel_values: torch.FloatTensor):
         """
-        Obtains image last hidden states from the vision tower and apply multimodal projection.
+        Obtains image last hidden states from the vision tower, applies multimodal projection,
+        and optionally compresses/reshapes tokens based on `self.token_compression`.
+
+        Assumes `self.token_compression` (str or None) and `self.target_length` (int) are
+        attributes of the class instance.
 
         Args:
-            pixel_values (`torch.FloatTensor]` of shape `(batch_size, channels, height, width)`)
-               The tensors corresponding to the input images.
+            pixel_values (`torch.FloatTensor` of shape `(batch_size, channels, height, width)`)
+            The tensors corresponding to the input images.
+
         Returns:
-            image_features (`torch.Tensor`): Image feature tensor of shape `(num_images, image_length, embed_dim)`).
+            image_features (`torch.Tensor`): Processed image feature tensor.
+                                            If `self.token_compression` is None, shape is `(batch_size, original_seq_len, embed_dim)`.
+                                            Otherwise, shape is `(batch_size * self.target_length / 1024, 1024, embed_dim)`.
+                                            Requires `(batch_size * self.target_length)` to be divisible by 1024
+                                            when compression is active.
         """
-        image_outputs = self.vision_tower(pixel_values)
-        selected_image_feature = image_outputs.last_hidden_state
-        image_features = self.multi_modal_projector(selected_image_feature)
-        image_features = image_features / (self.config.text_config.hidden_size**0.5)
 
-        # sliced_tensor = image_features[:, -128:, :]
-        # slices = [sliced_tensor[i].unsqueeze(0) for i in range(sliced_tensor.size(0))]
-        # image_features = torch.cat(slices, dim=1)
+        # Ensure target_length is set if compression is not None
+        if self.token_compression is not None and (not hasattr(self, 'target_length') or not isinstance(self.target_length, int)):
+            raise AttributeError("self.target_length must be an integer if self.token_compression is not None.")
+        
+        # Initialize token_compression and target_length from self
+        token_compression = self.token_compression
+        target_length = getattr(self, 'target_length', None) # Safely get target_length, defaults to None if not set
 
-        # print("***********************************")
-        # print("Pixelvalues " + str(pixel_values.shape))
-        # print(image_features.shape)
-        # print(selected_image_feature.shape)
-        # print("***********************************")
+        with torch.no_grad():
+            image_outputs = self.vision_tower(pixel_values)
+            selected_image_feature = image_outputs.last_hidden_state # Shape: (batch_size, original_seq_len, vision_embed_dim)
+            image_features = self.multi_modal_projector(selected_image_feature) # Shape: (batch_size, original_seq_len, embed_dim)
+            
+            # This is a scaling factor, common in attention mechanisms (e.g., in Transformers)
+            image_features = image_features / (self.config.text_config.hidden_size**0.5)
 
-        return image_features
+        batch_size, original_sequence_length, embed_dim = image_features.shape
+
+        if token_compression is None:
+            # If token_compression is None, return features as is
+            final_processed_features = image_features.detach().clone()
+        else:
+            # --- Step 1: Compress features per image to target_length ---
+            compressed_per_image_features = torch.zeros(
+                (batch_size, target_length, embed_dim),
+                dtype=image_features.dtype,
+                device=image_features.device
+            )
+
+            for i in range(batch_size):
+                current_image_features = image_features[i] # Shape: (original_sequence_length, embed_dim)
+                
+                if original_sequence_length <= target_length:
+                    # If the original sequence is shorter or equal, just copy and pad if necessary
+                    compressed_per_image_features[i, :original_sequence_length, :] = current_image_features
+                else:
+                    if token_compression == "last":
+                        compressed_per_image_features[i] = current_image_features[-target_length:, :]
+
+                    elif token_compression == "random":
+                        indices = random.sample(range(original_sequence_length), target_length)
+                        indices.sort() # Keep tokens in their original relative order
+                        compressed_per_image_features[i] = current_image_features[indices, :]
+
+                    elif token_compression == "even_sampling":
+                        stride = original_sequence_length // target_length
+                        if stride == 0: # This case should ideally not happen if original_sequence_length > target_length
+                            compressed_per_image_features[i, :original_sequence_length, :] = current_image_features
+                        else:
+                            sampled_indices = torch.arange(0, original_sequence_length, stride, device=image_features.device)
+                            if sampled_indices.shape[0] > target_length:
+                                sampled_indices = sampled_indices[:target_length]
+                            elif sampled_indices.shape[0] < target_length:
+                                num_missing = target_length - sampled_indices.shape[0]
+                                padding_tokens = torch.zeros(num_missing, embed_dim, dtype=image_features.dtype, device=image_features.device)
+                                temp_features = current_image_features[sampled_indices, :]
+                                compressed_per_image_features[i] = torch.cat([temp_features, padding_tokens], dim=0)
+                            else:
+                                compressed_per_image_features[i] = current_image_features[sampled_indices, :]
+
+                    elif token_compression == "average":
+                        stride = original_sequence_length // target_length
+                        if stride == 0: # This case should ideally not happen if original_sequence_length > target_length
+                            compressed_per_image_features[i, :original_sequence_length, :] = current_image_features
+                        else:
+                            averaged_features = []
+                            for j in range(0, original_sequence_length, stride):
+                                chunk = current_image_features[j : j + stride, :]
+                                if chunk.numel() > 0: # Ensure chunk is not empty
+                                    averaged_features.append(chunk.mean(dim=0))
+                                if len(averaged_features) == target_length: # Stop if we reach the target count
+                                    break
+                            
+                            if len(averaged_features) > 0:
+                                stacked_avg_features = torch.stack(averaged_features)
+                                if stacked_avg_features.shape[0] < target_length:
+                                    num_missing = target_length - stacked_avg_features.shape[0]
+                                    padding = torch.zeros(num_missing, embed_dim, dtype=image_features.dtype, device=image_features.device)
+                                    compressed_per_image_features[i] = torch.cat([stacked_avg_features, padding], dim=0)
+                                else:
+                                    compressed_per_image_features[i] = stacked_avg_features
+                            else:
+                                # Handle case where no features could be averaged
+                                compressed_per_image_features[i] = torch.zeros(target_length, embed_dim, dtype=image_features.dtype, device=image_features.device)
+
+                    else:
+                        raise ValueError(f"Unknown token_compression strategy: {token_compression}")
+
+            # --- Step 2: Flatten into (batch_size * target_length, embed_dim) ---
+            flattened_features = compressed_per_image_features.view(-1, embed_dim)
+
+            # --- Step 3: Reshape to (batch_size * target_length / 1024, 1024, embed_dim) ---
+            # Calculate the new first dimension
+            new_batch_dim = (batch_size * target_length) // 1024
+            
+            # Add a check for divisibility to provide a more informative error
+            if (batch_size * target_length) % 1024 != 0:
+                raise ValueError(
+                    f"Cannot reshape: (batch_size * target_length) = ({batch_size} * {target_length}) = {batch_size * target_length} "
+                    f"is not perfectly divisible by 1024. Adjust batch_size or target_length."
+                )
+
+            final_processed_features = flattened_features.view(new_batch_dim, 1024, embed_dim).detach().clone()
+
+        print("*********************************************")
+        print(f"Input pixel_values shape: {pixel_values.shape}")
+        print(f"Shape after vision_tower (selected_image_feature): {selected_image_feature.shape}")
+        print(f"Shape after multi_modal_projector (image_features): {image_features.shape}")
+        if token_compression is not None:
+            print(f"Shape after per-image {token_compression} compression: {compressed_per_image_features.shape}")
+            print(f"Shape after flattening: {flattened_features.shape}")
+        print(f"Final output shape: {final_processed_features.shape}")
+        print("*********************************************")
+
+        del image_outputs
+        del selected_image_feature
+        del image_features
+        if 'compressed_per_image_features' in locals():
+            del compressed_per_image_features
+        if 'flattened_features' in locals():
+            del flattened_features
+        torch.cuda.empty_cache()
+
+        return final_processed_features
+
 
     @deprecate_kwarg("num_logits_to_keep", version="4.50", new_name="logits_to_keep")
     @add_start_docstrings_to_model_forward(PALIGEMMA_INPUTS_DOCSTRING)
