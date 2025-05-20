@@ -6,3 +6,4 @@ __pycache__/
 # finetune_test.py
 # question_test.py
 formatted_questions.txt
+artifacts/
