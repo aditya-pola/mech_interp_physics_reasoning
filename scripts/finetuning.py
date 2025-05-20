@@ -12,15 +12,15 @@ import sys
 from datetime import datetime
 import pytz
 
-from src.processing_paligemma import PaliGemmaProcessor
-from src.modeling_paligemma import PaliGemmaForConditionalGeneration
-from src.utils import lora_filter, freeze_vision_tower, setup_wandb, load_dataset, generate_run_name, create_valid_dirname
-
-with open('../config.yaml', 'r') as f:
+with open('config.yaml', 'r') as f:
     config = yaml.safe_load(f)
 
 HOME_DIR = config.get('HOME')
 sys.path.insert(0, HOME_DIR)
+
+from src.processing_paligemma import PaliGemmaProcessor
+from src.modeling_paligemma import PaliGemmaForConditionalGeneration
+from src.utils import lora_filter, freeze_vision_tower, setup_wandb, load_dataset, generate_run_name, create_valid_dirname
 
 ist = pytz.timezone('Asia/Kolkata')
 now_ist = datetime.now(ist)
@@ -88,8 +88,10 @@ def clevrer_collate_fn(examples):
         else:
             text = "Answer with one word or number only. " + example["question"]
 
+        num_image_tokens = model_config['target_length'] * data_config['num_frames'] / 1024
+
         # image_tokens = "<image> " * len(example['frames'])
-        image_tokens = "<image> "
+        image_tokens = "<image> " * int(num_image_tokens)
         prompt = image_tokens + text + " en"
         prompts.append(prompt)
         labels.append(example['answer'])

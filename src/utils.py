@@ -1,7 +1,7 @@
 import wandb
 import os
 from torchvision import transforms
-from data import ClevrerDataset
+from src.data import ClevrerDataset
 from datetime import datetime
 import pytz
 import re

@@ -568,15 +568,15 @@ class PaliGemmaForConditionalGeneration(PaliGemmaPreTrainedModel, GenerationMixi
 
             final_processed_features = flattened_features.view(new_batch_dim, 1024, embed_dim).detach().clone()
 
-        print("*********************************************")
-        print(f"Input pixel_values shape: {pixel_values.shape}")
-        print(f"Shape after vision_tower (selected_image_feature): {selected_image_feature.shape}")
-        print(f"Shape after multi_modal_projector (image_features): {image_features.shape}")
-        if token_compression is not None:
-            print(f"Shape after per-image {token_compression} compression: {compressed_per_image_features.shape}")
-            print(f"Shape after flattening: {flattened_features.shape}")
-        print(f"Final output shape: {final_processed_features.shape}")
-        print("*********************************************")
+        # print("*********************************************")
+        # print(f"Input pixel_values shape: {pixel_values.shape}")
+        # print(f"Shape after vision_tower (selected_image_feature): {selected_image_feature.shape}")
+        # print(f"Shape after multi_modal_projector (image_features): {image_features.shape}")
+        # if token_compression is not None:
+        #     print(f"Shape after per-image {token_compression} compression: {compressed_per_image_features.shape}")
+        #     print(f"Shape after flattening: {flattened_features.shape}")
+        # print(f"Final output shape: {final_processed_features.shape}")
+        # print("*********************************************")
 
         del image_outputs
         del selected_image_feature
