@@ -1,0 +1,29 @@
+HOME: "/data/ai24mtech02001/projects/mech_interp_physics_reasoning/"
+
+model_train:
+  model: "google/paligemma2-3b-mix-448"
+  num_epochs: 3
+  batch_size: 1
+  learning_rate: 5e-5
+  weight_decay: 1e-6
+  optimizer: "adamw_torch"
+  save_dir: "artifacts/"
+  token_compression: "last" # last, random, even_sampling, average
+  target_length: 256 # Compressing the 1024 tokens output per image into these many tokens which are then concatenated
+
+data_config:
+  data_path: "frame_captures/"
+  json_path: "train.json"
+  image_size: 448
+  num_frames: 8
+  test_size: 0.2
+  question_type: "all"
+
+lora:
+  rank: 16
+  layers: "all"  # Can be "all" or a list of integers (e.g., [0, 1, 2])
+  layer_types: ["self_attn", "mlp", "embeddings", "projector"] # Can be a list like ["self_attn", "mlp", "embeddings", "projector", "q_proj", "k_proj", "v_proj", "o_proj"]
+  include_vision: True
+  include_language: True
+  vision_layers: null # Can be null or a list of integers (e.g., [0, 5, 10])
+  language_layers: null # Can be null or a list of integers (e.g., [0, 5, 10])

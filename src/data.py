@@ -1,106 +1,3 @@
-# import os
-# import json
-# from PIL import Image
-# from torch.utils.data import Dataset
-# import torchvision.transforms as transforms
-# import string
-
-# class ClevrerDataset(Dataset):
-#     def __init__(self, frames_root, json_path, transform=None):
-#         """
-#         Args:
-#             frames_root (string): Path to 'frame_captures' directory.
-#             json_path (string): Path to 'train.json'.
-#             transform (callable, optional): Optional transform to be applied on a frame.
-#         """
-#         self.frames_root = frames_root
-#         self.transform = transform
-
-#         # Load CLEVRER question/answer annotations
-#         with open(json_path, 'r') as f:
-#             self.annotations = json.load(f)
-
-#         # Index annotations by video filename for quick access
-#         self.annotations_by_video = {
-#             entry['video_filename']: entry for entry in self.annotations
-#         }
-
-#         # Gather all video paths that have the 8 frames
-#         self.video_dirs = []
-#         self.video_filenames = []
-#         for dirpath, _, filenames in os.walk(frames_root):
-#             if all(f"frame_{i}.jpg" in filenames for i in range(8)):
-#                 video_folder_name = os.path.basename(dirpath)
-#                 video_filename = f"{video_folder_name}.mp4"
-#                 if video_filename in self.annotations_by_video:
-#                     self.video_dirs.append(dirpath)
-#                     self.video_filenames.append(video_filename)
-
-
-#     def __len__(self):
-#         return len(self.video_dirs)
-
-#     def __getitem__(self, idx):
-#         video_dir = self.video_dirs[idx]
-#         video_filename = self.video_filenames[idx]
-
-#         # Load 8 frames
-#         frames = []
-#         for i in range(8):
-#             frame_path = os.path.join(video_dir, f"frame_{i}.jpg")
-#             image = Image.open(frame_path).convert("RGB")
-#             if self.transform:
-#                 image = self.transform(image)
-#             frames.append(image)
-
-#         # Get question/answer info
-#         qa_entry = self.annotations_by_video[video_filename]
-#         questions_by_type = {}
-
-#         for q in qa_entry['questions']:
-#             q_type = q['question_type']
-#             if q_type not in questions_by_type:
-#                 questions_by_type[q_type] = []
-
-#             # Handle MCQ-type questions (with choices)
-#             if q_type in ['counterfactual', 'explanatory', 'predictive']:
-#                 base_question = q['question']
-
-#                 choices = q.get('choices', [])
-
-#                 lettered_choices = [f"{letter}) {c['choice']}" for letter, c in zip(string.ascii_lowercase, choices)]
-#                 full_question = base_question + " " + " ".join(lettered_choices)
-
-#                 correct_letters = [
-#                     string.ascii_lowercase[i]
-#                     for i, c in enumerate(choices)
-#                     if c.get('answer', '') == 'correct'
-#                 ]
-#                 answer = " ".join(correct_letters)
-
-#                 questions_by_type[q_type].append({
-#                     'question_id': q['question_id'],
-#                     'question': full_question,
-#                     'answer': answer
-#                 })
-
-#             # Handle other question types (e.g., descriptive)
-#             else:
-#                 questions_by_type[q_type].append({
-#                     'question_id': q['question_id'],
-#                     'question': q['question'],
-#                     'answer': q.get('answer', None)  # safe fallback
-#                 })
-
-#         sample = {
-#             'frames': frames,
-#             'questions': questions_by_type,
-#             'video_filename': video_filename
-#         }
-
-#         return sample
-
-
 import os
 import json
 from PIL import Image
@@ -110,13 +7,12 @@ import string
 import random
 from collections import defaultdict
 
-NUM_FRAMES = 1
-
 class ClevrerDataset(Dataset):
-    def __init__(self, frames_root, json_path, transform=None, question_type='all'):
+    def __init__(self, frames_root, json_path, transform=None, question_type='all', NUM_FRAMES=8):
         self.frames_root = frames_root
         self.transform = transform
         self.question_type = question_type  # NEW: can be 'all', 'descriptive', 'counterfactual', etc.
+        self.NUM_FRAMES = NUM_FRAMES
 
         # Load CLEVRER annotations
         with open(json_path, 'r') as f:
@@ -131,7 +27,7 @@ class ClevrerDataset(Dataset):
         self.samples = []
 
         for dirpath, _, filenames in os.walk(frames_root):
-            if all(f"frame_{i}.jpg" in filenames for i in range(NUM_FRAMES)):
+            if all(f"frame_{i}.jpg" in filenames for i in range(self.NUM_FRAMES)):
                 video_folder = os.path.basename(dirpath)
                 video_filename = f"{video_folder}.mp4"
 
@@ -176,7 +72,7 @@ class ClevrerDataset(Dataset):
 
         # Load 8 frames
         frames = []
-        for i in range(NUM_FRAMES):
+        for i in range(self.NUM_FRAMES):
             frame_path = os.path.join(video_dir, f"frame_{i}.jpg")
             image = Image.open(frame_path).convert("RGB")
             if self.transform:
