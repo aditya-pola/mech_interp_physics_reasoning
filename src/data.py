@@ -88,7 +88,7 @@ class ClevrerDataset(Dataset):
             'video_filename': video_filename
         }
     
-    def train_test_split(self, test_size=0.2, random_seed=42, cache_path="split_indices.json"):
+    def train_test_split(self, test_size=0.2, random_seed=42, cache_path="miscellaneous/split_indices.json"):
         """
         Performs a stratified train/test split based on question_type and saves/loads split indices.
         Returns:
@@ -142,7 +142,7 @@ if __name__ == "__main__":
 
     dataset = ClevrerDataset(
         frames_root='frame_captures',
-        json_path='train.json',
+        json_path='miscellaneous/train.json',
         transform=transform
     )
 

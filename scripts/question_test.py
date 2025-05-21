@@ -1,6 +1,6 @@
 import json
 
-with open('train.json', 'r') as file:
+with open('miscellaneous/train.json', 'r') as file:
     dict_ = json.load(file)
 
 with open('formatted_questions.txt', 'w') as outfile:
@@ -35,7 +35,7 @@ print("All questions written to formatted_questions.txt with formatted choices."
 
 
 # import json
-# with open('train.json', 'r') as file:
+# with open('miscellaneous/train.json', 'r') as file:
 #     dict_ = json.load(file)
 # print(dict_[0]['questions'][0].keys())
 # for j in range(len(dict_)):
@@ -56,7 +56,7 @@ print("All questions written to formatted_questions.txt with formatted choices."
 
 # import json
 
-# with open('/data1/DATA/CLEVRER/train.json', 'r') as file:
+# with open('/data1/DATA/CLEVRER/miscellaneous/train.json', 'r') as file:
 #     data = json.load(file)
 
 # # Select the first video's question list

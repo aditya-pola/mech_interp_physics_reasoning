@@ -21,7 +21,7 @@
 
 # dataset = ClevrerDataset(
 #     frames_root='frame_captures',
-#     json_path='train.json',
+#     json_path='miscellaneous/train.json',
 #     transform=transform
 # )
 
@@ -110,7 +110,7 @@ def clevrer_collate_fn(batch):
 # --- Dataset and Dataloader ---
 dataset = ClevrerDataset(
     frames_root='frame_captures',
-    json_path='train.json',
+    json_path='miscellaneous/train.json',
     transform=transform,
     question_type="counterfactual"
 )
