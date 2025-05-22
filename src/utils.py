@@ -176,7 +176,6 @@ def generate_run_details(base_config, artists_file="miscellaneous/artists.txt", 
         "lora_vision_layers": lora_vision_layers,
         "lora_language_layers": lora_language_layers,
         "start_time_ist": now_ist.strftime("%Y-%m-%d %H:%M:%S %Z%z"),
-        # You can add more config details here if needed
     }
 
     return artist_name, dynamic_run_name, wandb_config_dict
