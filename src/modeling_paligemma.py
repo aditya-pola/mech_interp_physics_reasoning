@@ -480,7 +480,7 @@ class PaliGemmaForConditionalGeneration(PaliGemmaPreTrainedModel, GenerationMixi
             # This is a scaling factor, common in attention mechanisms (e.g., in Transformers)
             image_features = image_features / (self.config.text_config.hidden_size**0.5)
 
-        batch_size, original_sequence_length, embed_dim = image_features.shape
+        num_images, original_sequence_length, embed_dim = image_features.shape
 
         if token_compression is None:
             # If token_compression is None, return features as is
@@ -488,12 +488,12 @@ class PaliGemmaForConditionalGeneration(PaliGemmaPreTrainedModel, GenerationMixi
         else:
             # --- Step 1: Compress features per image to target_length ---
             compressed_per_image_features = torch.zeros(
-                (batch_size, target_length, embed_dim),
+                (num_images, target_length, embed_dim),
                 dtype=image_features.dtype,
                 device=image_features.device
             )
 
-            for i in range(batch_size):
+            for i in range(num_images):
                 current_image_features = image_features[i] # Shape: (original_sequence_length, embed_dim)
                 
                 if original_sequence_length <= target_length:
@@ -552,18 +552,18 @@ class PaliGemmaForConditionalGeneration(PaliGemmaPreTrainedModel, GenerationMixi
                     else:
                         raise ValueError(f"Unknown token_compression strategy: {token_compression}")
 
-            # --- Step 2: Flatten into (batch_size * target_length, embed_dim) ---
+            # --- Step 2: Flatten into (num_images * target_length, embed_dim) ---
             flattened_features = compressed_per_image_features.view(-1, embed_dim)
 
-            # --- Step 3: Reshape to (batch_size * target_length / 1024, 1024, embed_dim) ---
+            # --- Step 3: Reshape to (num_images * target_length / 1024, 1024, embed_dim) ---
             # Calculate the new first dimension
-            new_batch_dim = (batch_size * target_length) // 1024
+            new_batch_dim = (num_images * target_length) // 1024
             
             # Add a check for divisibility to provide a more informative error
-            if (batch_size * target_length) % 1024 != 0:
+            if (num_images * target_length) % 1024 != 0:
                 raise ValueError(
-                    f"Cannot reshape: (batch_size * target_length) = ({batch_size} * {target_length}) = {batch_size * target_length} "
-                    f"is not perfectly divisible by 1024. Adjust batch_size or target_length."
+                    f"Cannot reshape: (num_images * target_length) = ({num_images} * {target_length}) = {num_images * target_length} "
+                    f"is not perfectly divisible by 1024. Adjust num_images or target_length."
                 )
 
             final_processed_features = flattened_features.view(new_batch_dim, 1024, embed_dim).detach().clone()
@@ -699,7 +699,6 @@ class PaliGemmaForConditionalGeneration(PaliGemmaPreTrainedModel, GenerationMixi
                     "tokens from image embeddings."
                 )
             image_features = image_features.to(inputs_embeds.device, inputs_embeds.dtype)
-            # image_features = image_features[:, -128:, :]
 
             inputs_embeds = inputs_embeds.masked_scatter(special_image_mask, image_features)
 
