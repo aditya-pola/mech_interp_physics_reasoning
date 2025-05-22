@@ -5,6 +5,11 @@ from src.data import ClevrerDataset
 from datetime import datetime
 import pytz
 import re
+from collections import defaultdict
+import numpy as np
+
+from transformers import Trainer
+import torch
 
 def load_dataset(data_config):
     """
@@ -39,34 +44,38 @@ def load_dataset(data_config):
     train_ds, val_ds = dataset.train_test_split(test_size=data_config.get('test_size'))
     return train_ds, val_ds
 
-def generate_run_name(config):
+def generate_run_details(base_config, artists_file="miscellaneous/artists.txt", used_artists_file="miscellaneous/used_artists.txt"):
     """
-    Generates a run name string based on the provided configuration.
+    Generates a dynamic run name string and selects an artist name for WandB.
+    It also handles moving the artist name from artists.txt to used_artists.txt.
 
     Args:
-        config (dict): A dictionary containing 'model_train', 'data_config',
-                       and 'lora' configurations.
+        base_config (dict): The main configuration dictionary for your training run.
+        artists_file (str): Path to the file containing available artist names.
+        used_artists_file (str): Path to the file to log used artist names.
 
     Returns:
-        str: The dynamically generated run name.
+        tuple: (artist_name (str), dynamic_run_name (str), wandb_config_dict (dict))
+               - artist_name: The chosen artist name for the WandB run.
+               - dynamic_run_name: The detailed dynamic run name string.
+               - wandb_config_dict: A dictionary of key training parameters to log to WandB.
     """
     now_ist = datetime.now(pytz.timezone('Asia/Kolkata'))
 
-    # Extract relevant config details
-    full_model_name = config['model_train']['model']
-    # Shorten model name to "PaliG" if it's the specific Google model, otherwise use the last part of the name
+    # --- Generate Dynamic Run Name (Detailed) ---
+    full_model_name = base_config['model_train']['model']
     model_name_short = "PaliG" if full_model_name == "google/paligemma2-3b-mix-448" else full_model_name.split('/')[-1]
     
-    num_epochs = config['model_train']['num_epochs']
-    batch_size = config['model_train']['batch_size']
-    learning_rate = config['model_train']['learning_rate']
-    image_size = config['data_config']['image_size']
-    num_frames = config['data_config']['num_frames']
+    num_epochs = base_config['model_train']['num_epochs']
+    batch_size = base_config['model_train']['batch_size']
+    learning_rate = base_config['model_train']['learning_rate']
+    image_size = base_config['data_config']['image_size']
+    num_frames = base_config['data_config']['num_frames']
 
-    token_compression = config['model_train']['token_compression']
-    target_length = config['model_train']['target_length']
+    token_compression = base_config['model_train']['token_compression']
+    target_length = base_config['model_train']['target_length']
 
-    lora_config = config['lora']
+    lora_config = base_config['lora']
     lora_rank = lora_config['rank']
     lora_layers = lora_config['layers']
     lora_layer_types = lora_config.get('layer_types', [])
@@ -75,21 +84,13 @@ def generate_run_name(config):
     lora_vision_layers = lora_config.get('vision_layers')
     lora_language_layers = lora_config.get('language_layers')
 
-    # Succinct layer_types mapping
     layer_type_map = {
-        "self_attn": "attn",
-        "mlp": "mlp",
-        "embeddings": "emb",
-        "projector": "proj",
-        "q_proj": "q",
-        "k_proj": "k",
-        "v_proj": "v",
-        "o_proj": "o"
+        "self_attn": "attn", "mlp": "mlp", "embeddings": "emb", "projector": "proj",
+        "q_proj": "q", "k_proj": "k", "v_proj": "v", "o_proj": "o"
     }
     succinct_layer_types = [layer_type_map.get(lt, lt) for lt in lora_layer_types]
     layer_types_str = "_".join(succinct_layer_types) if succinct_layer_types else "all_types"
 
-    # Determine layers string for run name
     layers_str = ""
     if lora_vision_layers is not None and lora_language_layers is not None:
         layers_str = "selected_layers"
@@ -100,10 +101,8 @@ def generate_run_name(config):
     elif lora_layers == "all":
         layers_str = "all_layers"
     else:
-        # Fallback if 'layers' is a list but vision/language specific layers aren't set
         layers_str = "selected_layers"
 
-    # Determine inclusion mode
     inclusion_mode = ""
     if lora_include_vision and lora_include_language:
         inclusion_mode = "vision_and_language"
@@ -114,7 +113,6 @@ def generate_run_name(config):
     else:
         inclusion_mode = "no_vision_no_language"
 
-    # Construct run name parts
     dynamic_run_name_parts = [
         now_ist.strftime("%m-%d_%H:%M"),
         model_name_short,
@@ -122,16 +120,66 @@ def generate_run_name(config):
         f"lora: r={lora_rank}",
         inclusion_mode,
         f"{layers_str}->{layer_types_str}",
-        f"{token_compression}-compr_1024->{target_length}toks",
+        f"{token_compression}-compr_{target_length}toks", # Simplified from 1024->{target_length}toks
         f"e={num_epochs}",
         f"b={batch_size}",
         f"lr={learning_rate}",
         f"im_size={image_size}",
     ]
-
-    # Join all parts with spaces
     dynamic_run_name = " ".join(dynamic_run_name_parts)
-    return dynamic_run_name
+
+    # --- Artist Name Logic ---
+    artist_name = "default_artist" # Fallback
+    try:
+        with open(artists_file, 'r') as f:
+            artists = [line.strip() for line in f if line.strip()]
+
+        if not artists:
+            print(f"Warning: {artists_file} is empty. Using a default artist name.")
+            artist_name = f"default_artist_{now_ist.strftime('%H%M%S')}" # Add timestamp for uniqueness
+        else:
+            # Pick a random artist, or simply the first one
+            artist_name = artists.pop(0) # Take the first artist and remove it
+            print(f"Selected artist for run: {artist_name}")
+
+            # Write remaining artists back to file
+            with open(artists_file, 'w') as f:
+                for artist in artists:
+                    f.write(artist + '\n')
+
+            # Append used artist to used_artists.txt
+            with open(used_artists_file, 'a') as f:
+                f.write(f"{artist_name} --- {dynamic_run_name}\n")
+
+    except FileNotFoundError:
+        print(f"Warning: {artists_file} not found. Using a default artist name.")
+        artist_name = f"default_artist_{now_ist.strftime('%H%M%S')}"
+    except Exception as e:
+        print(f"Error handling artist files: {e}. Using a default artist name.")
+        artist_name = f"default_artist_{now_ist.strftime('%H%M%S')}"
+
+    # --- Construct WandB Config Dictionary ---
+    wandb_config_dict = {
+        "model_name": full_model_name,
+        "num_epochs": num_epochs,
+        "batch_size": batch_size,
+        "learning_rate": learning_rate,
+        "image_size": image_size,
+        "num_frames": num_frames,
+        "token_compression": token_compression,
+        "target_length": target_length,
+        "lora_rank": lora_rank,
+        "lora_layers_scope": lora_layers,
+        "lora_layer_types": lora_layer_types,
+        "lora_include_vision": lora_include_vision,
+        "lora_include_language": lora_include_language,
+        "lora_vision_layers": lora_vision_layers,
+        "lora_language_layers": lora_language_layers,
+        "start_time_ist": now_ist.strftime("%Y-%m-%d %H:%M:%S %Z%z"),
+        # You can add more config details here if needed
+    }
+
+    return artist_name, dynamic_run_name, wandb_config_dict
 
 def create_valid_dirname(run_name):
     """
@@ -163,20 +211,29 @@ def create_valid_dirname(run_name):
         dirname = "untitled_run"
     return dirname
 
-def setup_wandb(project_name, run_name, key):
+def setup_wandb(project_name, run_name, config_dict, key):
+    """
+    Sets up WandB logging for the training run.
+
+    Args:
+        project_name (str): The name of the WandB project.
+        run_name (str): The name for this specific WandB run (e.g., artist name).
+        config_dict (dict): A dictionary of parameters to log as the run's config.
+        key (str): Your WandB API key.
+    """
     try:
         wandb.login(key=key)
         print("Successfully logged into WandB.")
     except Exception as e:
         print(f"Error logging into WandB: {e}")
 
-    # Optional: Log models
     os.environ["WANDB_LOG_MODEL"] = "checkpoint"
     os.environ["WANDB_WATCH"] = "all"
     os.environ["WANDB_SILENT"] = "true"
 
     try:
-        wandb.init(project=project_name, name=run_name)
+        # Pass the config_dict directly to the config argument
+        wandb.init(project=project_name, name=run_name, config=config_dict, resume="allow")
         print(f"WandB run initialized: Project - {project_name}, Run - {run_name}")
     except Exception as e:
         print(f"Error initializing WandB run: {e}")
@@ -323,3 +380,83 @@ def lora_filter(model, layers="all", layer_types=None, include_vision=True, incl
             filtered_names.append(filtered_name)
 
     return filtered_names
+
+QUESTION_TYPE_MAPPING = {
+    'descriptive': 0,
+    'explanatory': 1,
+    'predictive': 2,
+    'counterfactual': 3,
+}
+REV_QUESTION_TYPE_MAPPING = {v: k for k, v in QUESTION_TYPE_MAPPING.items()}
+
+class CLEVRERTrainer(Trainer):
+    def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
+        original_question_types = inputs.pop("question_types", None)
+
+        inputs = self._prepare_inputs(inputs)
+
+        with torch.no_grad():
+            generated_tokens = model.generate(
+                **inputs,
+                max_new_tokens=100,
+                do_sample=False,
+            )
+
+        preds_token_ids = generated_tokens[:, -3]
+        
+        labels_token_ids = inputs.get("labels", None)
+        labels_token_ids = labels_token_ids[:, -2]
+
+        question_type_ids = torch.tensor(
+            [QUESTION_TYPE_MAPPING.get(q_type, -1) for q_type in original_question_types],
+            dtype=torch.long,
+            device=labels_token_ids.device
+        ).unsqueeze(-1)
+
+        combined_label_ids = torch.cat((labels_token_ids.unsqueeze(-1), question_type_ids), dim=1)
+
+        return (None, preds_token_ids, combined_label_ids)
+
+def compute_accuracy(eval_preds):
+    preds_token_ids, combined_label_ids_tensor = eval_preds
+
+    if isinstance(combined_label_ids_tensor, np.ndarray):
+        combined_label_ids_tensor = torch.from_numpy(combined_label_ids_tensor)
+
+    question_type_ids = combined_label_ids_tensor[:, -1].tolist()
+    labels_token_ids = combined_label_ids_tensor[:, 0]
+
+    question_types = [REV_QUESTION_TYPE_MAPPING.get(q_id, "unknown") for q_id in question_type_ids]
+
+    correct_by_type = defaultdict(int)
+    total_by_type = defaultdict(int)
+
+    overall_correct = 0
+    overall_total = 0
+
+    is_correct_tensor = (preds_token_ids == labels_token_ids)
+    
+    for i in range(len(preds_token_ids)):
+        q_type = question_types[i]
+        is_correct = is_correct_tensor[i].item()
+
+        total_by_type[q_type] += 1
+        if is_correct:
+            correct_by_type[q_type] += 1
+
+        overall_total += 1
+        if is_correct:
+            overall_correct += 1
+
+    metrics = {}
+    overall_accuracy = overall_correct / overall_total if overall_total > 0 else 0.0
+    metrics["overall_acc"] = overall_accuracy
+
+    for q_type in sorted(total_by_type.keys()):
+        if total_by_type[q_type] > 0:
+            type_accuracy = correct_by_type[q_type] / total_by_type[q_type]
+            metrics[f"{q_type}_acc"] = type_accuracy
+        else:
+            metrics[f"{q_type}_acc"] = 0.0
+
+    return metrics
