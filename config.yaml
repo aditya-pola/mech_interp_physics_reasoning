@@ -12,7 +12,8 @@ model_train:
   target_length: 256 # Compressing the 1024 tokens output per image into these many tokens which are then concatenated
   save_steps: 500
   save_total_limit: 2
-  eval_steps: 1
+  eval_steps: 500
+  eval_batch_size: 8
 
 data_config:
   data_path: "frame_captures/"

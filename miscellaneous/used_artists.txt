@@ -1,0 +1,1 @@
+Jan van Eyck (c. 1390) --- 05-22_00:04 PaliG frames=8 lora: r=16 vision_and_language all_layers->attn_mlp_emb_proj last-compr_256toks e=3 b=1 lr=5e-5 im_size=448
