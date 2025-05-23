@@ -21,8 +21,8 @@ def extract_frames(video_path, num_frames=8):
     return frames
 
 # Root directory containing videos
-input_root = "/data/ai24mtech02001/DATA/CLEVRER/video_train"
-output_base = os.path.join(os.getcwd(), "frame_captures")
+input_root = "/data/ai24mtech02001/DATA/CLEVRER/video_validation"
+output_base = os.path.join("/data/ai24mtech02001/projects/mech_interp_physics_reasoning/", "test_frames")
 
 # Walk through all subfolders and files
 for root, dirs, files in os.walk(input_root):
