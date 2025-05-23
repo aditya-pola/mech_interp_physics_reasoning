@@ -1,22 +1,22 @@
-HOME: "/data1/ai24mtech02001/projects/mech_interp_physics_reasoning/"
+HOME: "/data/ai24mtech02001/projects/mech_interp_physics_reasoning/"
 
 model_train:
   model: "google/paligemma2-3b-mix-448"
   num_epochs: 3
-  batch_size: 1
+  batch_size: 6
   learning_rate: 5e-5
   weight_decay: 1e-6
   optimizer: "adamw_torch"
   save_dir: "artifacts/"
-  token_compression: "last" # last, random, even_sampling, average
-  target_length: 256 # Compressing the 1024 tokens output per image into these many tokens which are then concatenated
+  token_compression: "last" # last, random, even_sampling, average, null
+  target_length: 128 # Compressing the 1024 tokens output per image into these many tokens which are then concatenated
   save_steps: 500
   save_total_limit: 2
   eval_steps: 500
   eval_batch_size: 8
 
 data_config:
-  data_path: "frame_captures/"
+  data_path: "train_frames/"
   json_path: "miscellaneous/train.json"
   image_size: 448
   num_frames: 8
