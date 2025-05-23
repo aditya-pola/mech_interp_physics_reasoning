@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"]='3'
+os.environ["CUDA_VISIBLE_DEVICES"]='0,1,2'
 
 import torch
 from transformers import BitsAndBytesConfig
@@ -14,7 +14,7 @@ import glob
 import shutil
 
 # ----------------------------------
-IS_TEST_RUN = True # Set to False for actual training runs
+IS_TEST_RUN = False # Set to False for actual training runs
 # ----------------------------------
 
 with open('config.yaml', 'r') as f:
@@ -27,7 +27,8 @@ from src.processing_paligemma import PaliGemmaProcessor
 from src.modeling_paligemma import PaliGemmaForConditionalGeneration
 from src.utils import lora_filter, freeze_vision_tower, load_dataset, \
                       generate_run_details, create_valid_dirname, \
-                      CLEVRERTrainer, compute_accuracy, setup_wandb
+                      CLEVRERTrainer, compute_accuracy, setup_wandb, \
+                      make_clevrer_collate_fn
 
 ist = pytz.timezone('Asia/Kolkata')
 now_ist = datetime.now(ist)
@@ -47,7 +48,7 @@ else:
     setup_wandb(project_name="Physical_Reasoning",
                 run_name=run_name,
                 config_dict=wandb_config_for_run,
-                key="c05e9a6ff01ac9550c6c83b7c666c67f0d68872")
+                key="c05e9a6ff01ac9550c6c83b7c666c67f0d688723")
 
 hf_login(token="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")
 
@@ -63,8 +64,8 @@ def get_device_map() -> str:
 device = get_device_map()
 
 model = PaliGemmaForConditionalGeneration.from_pretrained(model_id,
-                                                        #   device_map="auto",
-                                                          device_map=device,
+                                                          device_map="auto",
+                                                        #   device_map=device,
                                                           attn_implementation="eager",
                                                           token_compression=model_config.get('token_compression'),
                                                           target_length=model_config.get('target_length'))
@@ -95,38 +96,7 @@ model.print_trainable_parameters()
 DTYPE = model.dtype
 processor = PaliGemmaProcessor.from_pretrained(model_id)
 
-def clevrer_collate_fn(examples):
-    prompts, labels_text, images, question_types_list = [], [], [], []
-
-    for example in examples:
-        if example['question_type'] != 'descriptive':
-            text = "Select all that apply. " + example["question"]
-        else:
-            text = "Answer with one word or number only. " + example["question"]
-
-        num_image_tokens_calc = (model_config.get('target_length', 128) * data_config.get('num_frames', 8)) / 1024
-        image_tokens_count = int(num_image_tokens_calc)
-
-        image_tokens = "<image> " * image_tokens_count
-        prompt = image_tokens + text + " en"
-
-        prompts.append(prompt)
-        labels_text.append(example['answer'])
-        images.append(example['frames'])
-        question_types_list.append(example['question_type'])
-
-    tokens = processor(
-        text=prompts,
-        images=images,
-        return_tensors='pt',
-        do_rescale=False,
-        padding="longest",
-        suffix=labels_text,
-    ).to(DTYPE)
-
-    tokens["question_types"] = question_types_list
-
-    return tokens
+clevrer_collate_fn = make_clevrer_collate_fn(processor, model_config, data_config, DTYPE)
 
 if not IS_TEST_RUN:
     valid_dirname = create_valid_dirname(run_name)

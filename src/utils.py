@@ -388,6 +388,44 @@ QUESTION_TYPE_MAPPING = {
 }
 REV_QUESTION_TYPE_MAPPING = {v: k for k, v in QUESTION_TYPE_MAPPING.items()}
 
+def make_clevrer_collate_fn(processor, model_config, data_config, dtype):
+    def collate_fn(examples):
+        prompts, labels_text, images, question_types_list = [], [], [], []
+
+        for example in examples:
+            if example['question_type'] != 'descriptive':
+                text = "Select all that apply. " + example["question"]
+            else:
+                text = "Answer with one word or number only. " + example["question"]
+
+            if model_config.get('token_compression') is not None:
+                num_image_tokens_calc = (model_config.get('target_length', 128) * data_config.get('num_frames', 8)) / 1024
+                image_tokens_count = int(num_image_tokens_calc)
+            else:
+                image_tokens_count = data_config.get('num_frames')
+
+            image_tokens = "<image> " * image_tokens_count
+            prompt = image_tokens + text + " en"
+
+            prompts.append(prompt)
+            labels_text.append(example['answer'])
+            images.append(example['frames'])
+            question_types_list.append(example['question_type'])
+
+        tokens = processor(
+            text=prompts,
+            images=images,
+            return_tensors='pt',
+            do_rescale=False,
+            padding="longest",
+            suffix=labels_text,
+        ).to(dtype)
+
+        tokens["question_types"] = question_types_list
+        return tokens
+
+    return collate_fn
+
 class CLEVRERTrainer(Trainer):
     def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
         original_question_types = inputs.pop("question_types", None)
