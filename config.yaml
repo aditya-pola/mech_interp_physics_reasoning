@@ -1,15 +1,16 @@
 HOME: "/data/ai24mtech02001/projects/mech_interp_physics_reasoning/"
 
 model_train:
-  model: "google/paligemma2-3b-mix-448"
-  num_epochs: 3
-  batch_size: 6
-  learning_rate: 5e-5
-  weight_decay: 1e-6
+  # model: "google/paligemma2-3b-mix-448"
+  # model: "google/paligemma-3b-pt-224"
+  num_epochs: 2
+  batch_size: 1
+  learning_rate: 5e-6
+  weight_decay: 1e-4
   optimizer: "adamw_torch"
   save_dir: "artifacts/"
-  token_compression: "last" # last, random, even_sampling, average, null
-  target_length: 128 # Compressing the 1024 tokens output per image into these many tokens which are then concatenated
+  token_compression: "even_sampling" # last, random, even_sampling, average, null
+  target_length: 512 # Compressing the 1024 tokens output per image into these many tokens which are then concatenated
   save_steps: 500
   save_total_limit: 2
   eval_steps: 500
@@ -20,13 +21,14 @@ data_config:
   json_path: "miscellaneous/train.json"
   image_size: 448
   num_frames: 8
-  test_size: 0.2
+  test_size: 500
   question_type: "all"
+  seed: 42
 
 lora:
   rank: 16
   layers: "all"  # Can be "all" or a list of integers (e.g., [0, 1, 2]) #TODO Change to selected and accept only from vision_layers and language_layers
-  layer_types: ["self_attn", "mlp", "embeddings", "projector"] # Can be a list like ["self_attn", "mlp", "embeddings", "projector", "q_proj", "k_proj", "v_proj", "o_proj"]
+  layer_types: ["self_attn", "mlp", "projector"] # Can be a list like ["self_attn", "mlp", "embeddings", "projector", "q_proj", "k_proj", "v_proj", "o_proj"]
   include_vision: True
   include_language: True
   vision_layers: null # Can be null or a list of integers (e.g., [0, 5, 10])

@@ -1,3 +1,13 @@
 Jan van Eyck (c. 1390) --- 05-22_00:04 PaliG frames=8 lora: r=16 vision_and_language all_layers->attn_mlp_emb_proj last-compr_256toks e=3 b=1 lr=5e-5 im_size=448
 Sandro Botticelli (1445) --- 05-23_22:03 PaliG frames=8 lora: r=16 vision_and_language all_layers->attn_mlp_emb_proj last-compr_128toks e=3 b=6 lr=5e-5 im_size=448
 Hieronymus Bosch (c. 1450) --- 05-23_22:08 PaliG frames=8 lora: r=16 vision_and_language all_layers->attn_mlp_emb_proj last-compr_128toks e=3 b=6 lr=5e-5 im_size=448
+Leonardo da Vinci (1452) --- 05-31_12:47 PaliG frames=8 lora: r=16 vision_and_language all_layers->attn_mlp_emb_proj last-compr_128toks e=3 b=2 lr=5e-5 im_size=448
+Albrecht Dürer (1471) --- 05-31_12:49 PaliG frames=8 lora: r=16 vision_and_language all_layers->attn_mlp_emb_proj last-compr_128toks e=3 b=2 lr=5e-5 im_size=448
+Michelangelo (1475) --- 06-01_10:06 PaliG frames=8 lora: r=16 vision_and_language all_layers->attn_mlp_emb_proj last-compr_128toks e=3 b=8 lr=5e-5 im_size=448
+Raphael (1483) --- 06-01_10:07 PaliG frames=8 lora: r=16 vision_and_language all_layers->attn_mlp_emb_proj last-compr_128toks e=3 b=8 lr=5e-5 im_size=448
+Titian (c. 1488) --- 06-02_16:56 PaliG frames=8 lora: r=16 vision_and_language all_layers->attn_mlp_emb_proj last-compr_128toks e=3 b=8 lr=5e-5 im_size=448
+Tintoretto (1518) --- 06-02_16:57 PaliG frames=8 lora: r=16 vision_and_language all_layers->attn_mlp_emb_proj last-compr_128toks e=3 b=8 lr=5e-5 im_size=448
+Pieter Bruegel the Elder (c. 1525) --- 06-02_16:58 PaliG frames=8 lora: r=16 vision_and_language all_layers->attn_mlp_emb_proj last-compr_128toks e=3 b=8 lr=5e-5 im_size=448
+Paolo Veronese (1528) --- 06-02_17:02 PaliG frames=8 lora: r=16 vision_and_language all_layers->attn_mlp_emb_proj last-compr_128toks e=2 b=6 lr=5e-5 im_size=448
+El Greco (1541) --- 06-04_10:27 PaliG frames=8 lora: r=16 vision_and_language all_layers->attn_mlp_proj even_sampling-compr_512toks e=2 b=1 lr=5e-6 im_size=448
+Caravaggio (1571) --- 06-05_11:58 PaliG frames=8 lora: r=16 vision_and_language all_layers->attn_mlp_proj even_sampling-compr_512toks e=2 b=1 lr=5e-6 im_size=448

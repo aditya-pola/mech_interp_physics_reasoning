@@ -1,10 +1,12 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"]='0,1,2'
+os.environ["CUDA_VISIBLE_DEVICES"]='0,1,2,3'
+# os.environ["CUDA_VISIBLE_DEVICES"]='3'
 
 import torch
 from transformers import BitsAndBytesConfig
 from peft import get_peft_model, LoraConfig
 from transformers import TrainingArguments, Trainer
+from transformers.trainer_utils import IntervalStrategy
 from huggingface_hub import login as hf_login
 import yaml
 import sys
@@ -49,8 +51,14 @@ else:
                 run_name=run_name,
                 config_dict=wandb_config_for_run,
                 key="c05e9a6ff01ac9550c6c83b7c666c67f0d688723")
+    hf_login(token="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")
 
-hf_login(token="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")
+
+if IS_TEST_RUN:
+    import random
+    rand_seed = random.randint(1,1000)
+    data_config['seed'] = rand_seed
+    print("Random seed is:", rand_seed)
 
 data_config['HOME'] = HOME_DIR
 train_ds, val_ds = load_dataset(data_config)
@@ -83,7 +91,8 @@ target_modules = lora_filter(
 lora_config = LoraConfig(
     r=lora_config_params.get('rank'),
     target_modules=target_modules,
-    task_type="CAUSAL_LM",
+    task_type="QUESTION_ANS",
+    # task_type="CAUSAL_LM",
 )
 
 model.enable_input_require_grads()
@@ -96,7 +105,7 @@ model.print_trainable_parameters()
 DTYPE = model.dtype
 processor = PaliGemmaProcessor.from_pretrained(model_id)
 
-clevrer_collate_fn = make_clevrer_collate_fn(processor, model_config, data_config, DTYPE)
+clevrer_collate_fn = make_clevrer_collate_fn(model, processor, model_config, data_config, DTYPE)
 
 if not IS_TEST_RUN:
     valid_dirname = create_valid_dirname(run_name)
@@ -134,6 +143,7 @@ args=TrainingArguments(
             per_device_train_batch_size=model_config.get('batch_size'),
             per_device_eval_batch_size=model_config.get('eval_batch_size', 8),
             gradient_accumulation_steps=4,
+            # eval_accumulation_steps=1,
             warmup_steps=2,
             learning_rate=float(model_config.get('learning_rate')),
             weight_decay=float(model_config.get('weight_decay')),
@@ -155,6 +165,8 @@ args=TrainingArguments(
             save_total_limit=model_config.get('save_total_limit', 2),
             output_dir=output_dir,
         )
+
+args.evaluation_strategy = IntervalStrategy.STEPS
 
 trainer = CLEVRERTrainer(
         model=model,

@@ -7,11 +7,12 @@ import string
 import random
 
 class ClevrerDataset(Dataset):
-    def __init__(self, frames_root, json_path, transform=None, question_type='all', NUM_FRAMES=8):
+    def __init__(self, frames_root, json_path, transform=None, question_type='all', NUM_FRAMES=8, shuffle=True):
         self.frames_root = frames_root
         self.transform = transform
         self.question_type = question_type
         self.NUM_FRAMES = NUM_FRAMES
+        self.shuffle = shuffle
 
         if not os.path.exists(json_path):
             raise FileNotFoundError(f"Annotation file not found at: {json_path}")
@@ -120,11 +121,14 @@ class ClevrerDataset(Dataset):
             print("No videos found in the dataset with associated questions. Cannot perform split.")
             return Subset(self, []), Subset(self, []) # Return empty subsets
 
-        rng = random.Random(random_seed)
-        rng.shuffle(all_video_filenames)
+        if self.shuffle:
+            rng = random.Random(random_seed)
+            rng.shuffle(all_video_filenames)
 
         num_test_videos = int(len(all_video_filenames) * test_size)
-        if num_test_videos == 0 and len(all_video_filenames) > 0 and test_size > 0:
+        if test_size > 1:
+            num_test_videos = int(test_size)
+        elif num_test_videos == 0 and len(all_video_filenames) > 0 and test_size >= 0 and test_size < 1:
             # Ensure at least one video in test set if possible
             num_test_videos = 1
             print(f"Warning: test_size {test_size} resulted in 0 test videos. Setting to 1 test video.")
@@ -146,8 +150,9 @@ class ClevrerDataset(Dataset):
                 test_indices.append(idx)
             # If a video is neither in train nor test, it will be skipped from the split (shouldn't happen with proper splitting logic)
 
-        rng.shuffle(train_indices)
-        rng.shuffle(test_indices)
+        if self.shuffle:
+            rng.shuffle(train_indices)
+            rng.shuffle(test_indices)
 
         with open(cache_path, "w") as f:
             json.dump({

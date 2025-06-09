@@ -1,6 +1,5 @@
-# ------------------ Show available CUDA devices ------------------
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '3'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 
 import sys
 import torch
@@ -11,11 +10,11 @@ import numpy as np
 import json
 from transformers import TrainingArguments
 from peft import PeftModel
+from collections import defaultdict
 
 
 def get_device_map():
     return "cuda" if torch.cuda.is_available() else "cpu"
-
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate a PaliGemma model (base or with LoRA) on CLEVRER test set.")
@@ -40,7 +39,6 @@ def main():
         if not os.path.exists(config_path):
             raise FileNotFoundError(f"config.yaml not found in {checkpoint_dir}")
 
-    # Load config
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
 
@@ -52,8 +50,8 @@ def main():
     model_config = config["model_train"]
     data_config = config["data_config"]
     model_id = model_config["model"]
+    question_type = data_config.get("question_type", "all")
 
-    # Dataset setup
     test_frames_dir = os.path.join(HOME_DIR, data_config.get("data_path", "test_frames"))
     annotations_path = os.path.join(HOME_DIR, data_config.get("json_path", "miscellaneous/validation.json"))
 
@@ -65,50 +63,69 @@ def main():
     dataset = ClevrerDataset(
         frames_root=test_frames_dir,
         json_path=annotations_path,
-        transform=None
+        question_type=question_type,
+        transform=None,
+        shuffle=False
     )
 
-    train_ds, _ = dataset.train_test_split(test_size=0.0)
-    test_ds = train_ds
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # Load model
+    if args.base:
+        results_root = os.path.join(HOME_DIR, "artifacts", "BASE", f"eval_{question_type}_{timestamp}")
+    else:
+        results_root = os.path.join(checkpoint_dir, f"eval_{question_type}_{timestamp}")
+
+    os.makedirs(results_root, exist_ok=True)
+    split_cache_path = os.path.join(results_root, "split_indices.json")
+
+
+    train_ds, test_ds = dataset.train_test_split(
+        test_size=500,
+        cache_path=split_cache_path
+    )
+
+    # AUTOMATE LATER
+    if not args.base:
+        checkpoint_dir = os.path.join(checkpoint_dir, "checkpoint-500")
+
     device = get_device_map()
     if args.base:
         print("Loading base model only (no LoRA).")
         model = PaliGemmaForConditionalGeneration.from_pretrained(
             model_id,
-            device_map=device,
+            device_map="auto",
             attn_implementation="eager",
             token_compression=model_config.get('token_compression')
         )
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        results_file = os.path.join(HOME_DIR, "miscellaneous", f"eval_base_{timestamp}.txt")
     else:
         print(f"Loading model with LoRA adapter from: {checkpoint_dir}")
         base_model = PaliGemmaForConditionalGeneration.from_pretrained(
             model_id,
-            device_map=device,
+            # device_map=device,
+            device_map="auto",
             attn_implementation="eager",
             token_compression=model_config.get("token_compression"),
             target_length=model_config.get("target_length")
         )
         model = PeftModel.from_pretrained(base_model, checkpoint_dir)
         model.to(device)
-        results_file = os.path.join(checkpoint_dir, "eval_results.txt")
 
-    # Load processor and collate_fn
+    results_file = os.path.join(results_root, "eval_results.txt")
+    details_path = os.path.join(results_root, "eval_details.json")
+
     processor = PaliGemmaProcessor.from_pretrained(model_id)
     collate_fn = make_clevrer_collate_fn(
+        model=model,
         processor=processor,
         model_config=model_config,
         data_config=data_config,
         dtype=model.dtype
     )
 
-    # Evaluation args (no output or logging)
     eval_args = TrainingArguments(
         output_dir="/tmp/eval",
         per_device_eval_batch_size=model_config.get("eval_batch_size", 8),
+        eval_accumulation_steps=1,
         dataloader_pin_memory=False,
         bf16=True,
         remove_unused_columns=False,
@@ -117,7 +134,6 @@ def main():
         logging_strategy="no"
     )
 
-    # Run prediction
     trainer = CLEVRERTrainer(
         model=model,
         args=eval_args,
@@ -131,40 +147,50 @@ def main():
     preds = pred_output.predictions
     labels = pred_output.label_ids
 
-    # Decode results
     preds = preds.tolist()
     labels = labels.tolist()
 
-    per_sample_results = []
+    special_tokens = {0, 1, 2, 3, -100, 257152}
     correct_flags = []
+    per_sample_results = []
+    type_correct = defaultdict(int)
+    type_total = defaultdict(int)
 
-    for i, (pred_id, (label_id, qtype_id)) in enumerate(zip(preds, labels)):
+    for i, (pred_row, label_row) in enumerate(zip(preds, labels)):
         item = test_ds[i]
-        correct = pred_id == label_id
+        qtype = item["question_type"]
+
+        filtered_pred = [x for x in pred_row if x not in special_tokens]
+        filtered_label = [x for x in label_row if x not in special_tokens]
+
+        correct = sorted(filtered_pred) == sorted(filtered_label)
         correct_flags.append(correct)
 
+        type_total[qtype] += 1
+        type_correct[qtype] += int(correct)
+
         per_sample_results.append({
+            "question_type": qtype,
             "question_id": item["question_id"],
             "video_filename": item["video_filename"],
-            "question_type_id": int(qtype_id),
-            "predicted_token_id": int(pred_id),
-            "label_token_id": int(label_id),
+            "predicted_token_ids": filtered_pred,
+            "label_token_ids": filtered_label,
             "correct": correct
         })
 
-    # Save detailed results
-    results_root = HOME_DIR if args.base else checkpoint_dir
-    details_path = os.path.join(results_root, "eval_details.json")
     with open(details_path, "w") as f:
         json.dump(per_sample_results, f, indent=2)
 
-    # Save accuracy
     accuracy = np.mean(correct_flags)
     with open(results_file, "w") as f:
-        f.write(f"accuracy: {accuracy:.4f}\n")
+        f.write(f"accuracy: {accuracy:.4f}\n\n")
+        f.write("Question Type Accuracies:\n")
+        for qtype, total in type_total.items():
+            acc = type_correct[qtype] / total
+            f.write(f"{qtype}: {acc:.4f} ({type_correct[qtype]}/{total})\n")
 
     print(f"Evaluation complete. Accuracy: {accuracy:.4f}")
-    print(f"Per-sample results saved to: {details_path}")
+    print(f"Results directory: {results_root}")
 
 
 if __name__ == "__main__":

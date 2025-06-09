@@ -41,7 +41,7 @@ def load_dataset(data_config):
         NUM_FRAMES=data_config.get('num_frames')
     )
 
-    train_ds, val_ds = dataset.train_test_split(test_size=data_config.get('test_size'))
+    train_ds, val_ds = dataset.train_test_split(test_size=data_config.get('test_size'), random_seed=data_config.get('seed', 42))
     return train_ds, val_ds
 
 def generate_run_details(base_config, artists_file="miscellaneous/artists.txt", used_artists_file="miscellaneous/used_artists.txt"):
@@ -388,15 +388,15 @@ QUESTION_TYPE_MAPPING = {
 }
 REV_QUESTION_TYPE_MAPPING = {v: k for k, v in QUESTION_TYPE_MAPPING.items()}
 
-def make_clevrer_collate_fn(processor, model_config, data_config, dtype):
+def make_clevrer_collate_fn(model, processor, model_config, data_config, dtype):
     def collate_fn(examples):
         prompts, labels_text, images, question_types_list = [], [], [], []
 
         for example in examples:
             if example['question_type'] != 'descriptive':
-                text = "Select all that apply. " + example["question"]
+                text = "ALWAYS Start your answer with 'Ans:'. Select all that apply. " + example["question"]
             else:
-                text = "Answer with one word or number only. " + example["question"]
+                text = "ALWAYS Start your answer with 'Ans:'. Answer with one word or number only. " + example["question"]
 
             if model_config.get('token_compression') is not None:
                 num_image_tokens_calc = (model_config.get('target_length', 128) * data_config.get('num_frames', 8)) / 1024
@@ -419,7 +419,7 @@ def make_clevrer_collate_fn(processor, model_config, data_config, dtype):
             do_rescale=False,
             padding="longest",
             suffix=labels_text,
-        ).to(dtype)
+        ).to(dtype).to(model.device)
 
         tokens["question_types"] = question_types_list
         return tokens
@@ -432,6 +432,16 @@ class CLEVRERTrainer(Trainer):
 
         inputs = self._prepare_inputs(inputs)
 
+        # print(inputs)
+        # print(inputs.keys())
+        # print(inputs['input_ids'].shape)
+
+
+        # # print(inputs['token_type_ids'].shape)
+        # print(inputs['labels'].shape)
+
+
+
         with torch.no_grad():
             generated_tokens = model.generate(
                 **inputs,
@@ -439,10 +449,30 @@ class CLEVRERTrainer(Trainer):
                 do_sample=False,
             )
 
-        preds_token_ids = generated_tokens[:, -3]
+        # breakpoint()
+
+        input_len = inputs["input_ids"].shape[-1]
+        # # generation = generated_tokens[0][input_len:]
+        # generation = generated_tokens[:, input_len:]
+        # decoded = self.processing_class.batch_decode(generation, skip_special_tokens=True)
+        # print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+        # print(decoded)
+        # print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+
+        # breakpoint()
+
+        preds_token_ids = generated_tokens[:, input_len:]
         
         labels_token_ids = inputs.get("labels", None)
-        labels_token_ids = labels_token_ids[:, -2]
+        mask = (labels_token_ids == -100)
+        labels_token_ids.masked_fill_(mask, 0)
+
+        # labels_token_ids = labels_token_ids[:, -2]
+
+        # print(generated_tokens.shape)
+        # print(labels_token_ids.shape)
+
+        # breakpoint()
 
         question_type_ids = torch.tensor(
             [QUESTION_TYPE_MAPPING.get(q_type, -1) for q_type in original_question_types],
@@ -450,50 +480,141 @@ class CLEVRERTrainer(Trainer):
             device=labels_token_ids.device
         ).unsqueeze(-1)
 
-        combined_label_ids = torch.cat((labels_token_ids.unsqueeze(-1), question_type_ids), dim=1)
+        combined_label_ids = torch.cat((labels_token_ids, question_type_ids), dim=1)
+
+        # print(preds_token_ids)
+
+        # print(generated_tokens.shape)
+        # print(labels_token_ids.shape)
+
+        # print("All occurrences (row, col) and then aggregated counts:")
+        # row_indices, col_indices = (generated_tokens == 0).nonzero(as_tuple=True)
+
+        # # Use a dictionary to store counts per row
+        # row_counts = {}
+        # for r_idx in row_indices.tolist():
+        #     row_counts[r_idx] = row_counts.get(r_idx, 0) + 1
+
+        # for row_idx, count in row_counts.items():
+        #     print(f"GEN Row {row_idx}: Appears {count} time(s)")
+
+        # token_type_ids = inputs['token_type_ids']
+        # # generated_tokens = generated_tokens * token_type_ids
+        # labels_token_ids = labels_token_ids * token_type_ids
+
+        # print(generated_tokens)
+        # # print(labels_token_ids)
+        # # print(torch.equal(generated_tokens, labels_token_ids))
+
+        # print("All occurrences (row, col) and then aggregated counts:")
+        # row_indices, col_indices = (labels_token_ids == -100).nonzero(as_tuple=True)
+
+        # # Use a dictionary to store counts per row
+        # row_counts = {}
+        # for r_idx in row_indices.tolist():
+        #     row_counts[r_idx] = row_counts.get(r_idx, 0) + 1
+
+        # for row_idx, count in row_counts.items():
+        #     print(f"LABELS Row {row_idx}: Appears {count} time(s)")
+
+        # print(generated_tokens.shape)
+
+        # output = self.processing_class.batch_decode(inputs['input_ids'], skip_special_tokens=True)
+        # print(output)
+
+        # output = self.processing_class.batch_decode(generated_tokens, skip_special_tokens=True)
+        # print(output)
+
+        # output = self.processing_class.batch_decode(labels_token_ids, skip_special_tokens=True)
+        # print(output)
 
         return (None, preds_token_ids, combined_label_ids)
 
-def compute_accuracy(eval_preds):
-    preds_token_ids, combined_label_ids_tensor = eval_preds
-
-    if isinstance(combined_label_ids_tensor, np.ndarray):
-        combined_label_ids_tensor = torch.from_numpy(combined_label_ids_tensor)
-
-    question_type_ids = combined_label_ids_tensor[:, -1].tolist()
-    labels_token_ids = combined_label_ids_tensor[:, 0]
-
-    question_types = [REV_QUESTION_TYPE_MAPPING.get(q_id, "unknown") for q_id in question_type_ids]
-
-    correct_by_type = defaultdict(int)
-    total_by_type = defaultdict(int)
-
-    overall_correct = 0
-    overall_total = 0
-
-    is_correct_tensor = (preds_token_ids == labels_token_ids)
+# def compute_accuracy(eval_preds):
     
-    for i in range(len(preds_token_ids)):
-        q_type = question_types[i]
-        is_correct = is_correct_tensor[i].item()
+#     # print("AAAAAAAAAAAAAAAAAAA")
+#     # print("AAAAAAAAAAAAAAAAAAA")
+#     # print("AAAAAAAAAAAAAAAAAAA")
+#     # print("AAAAAAAAAAAAAAAAAAA")
+#     # print("AAAAAAAAAAAAAAAAAAA")
+#     # print("AAAAAAAAAAAAAAAAAAA")
+#     # print("AAAAAAAAAAAAAAAAAAA")
 
-        total_by_type[q_type] += 1
-        if is_correct:
-            correct_by_type[q_type] += 1
+#     preds_token_ids, combined_label_ids_tensor = eval_preds
 
-        overall_total += 1
+#     if isinstance(combined_label_ids_tensor, np.ndarray):
+#         combined_label_ids_tensor = torch.from_numpy(combined_label_ids_tensor)
+
+#     question_type_ids = combined_label_ids_tensor[:, -1].tolist()
+#     labels_token_ids = combined_label_ids_tensor[:, :-1]
+
+#     # print(question_type_ids)
+
+#     question_types = [REV_QUESTION_TYPE_MAPPING.get(q_id, "unknown") for q_id in question_type_ids]
+
+#     correct_by_type = defaultdict(int)
+#     total_by_type = defaultdict(int)
+
+#     overall_correct = 0
+#     overall_total = 0
+
+#     print("\n")
+#     print(preds_token_ids)
+#     print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+#     print(combined_label_ids_tensor)
+
+#     breakpoint()
+    
+#     for i in range(len(preds_token_ids)):
+#         row_a = [x.item() for x in preds_token_ids[i] if x.item() not in (0, 1, -100)]
+#         row_b = [x.item() for x in labels_token_ids[i] if x.item() not in (0, 1, -100)]
+#         # print(row_a)
+#         # print(row_b)
+#         is_correct = int(sorted(row_a) == sorted(row_b))
+
+#         q_type = question_types[i]
+#         # is_correct = is_correct_tensor[i].item()
+
+#         total_by_type[q_type] += 1
+#         if is_correct:
+#             correct_by_type[q_type] += 1
+
+#         overall_total += 1
+#         if is_correct:
+#             overall_correct += 1
+
+#     metrics = {}
+#     overall_accuracy = overall_correct / overall_total if overall_total > 0 else 0.0
+#     metrics["overall_acc"] = overall_accuracy
+
+#     for q_type in sorted(total_by_type.keys()):
+#         if total_by_type[q_type] > 0:
+#             type_accuracy = correct_by_type[q_type] / total_by_type[q_type]
+#             metrics[f"{q_type}_acc"] = type_accuracy
+#         else:
+#             metrics[f"{q_type}_acc"] = 0.0
+
+#     # print(metrics)
+
+#     return metrics
+
+def compute_accuracy(eval_preds):
+    pred_tokens, label_tokens = eval_preds
+
+    total_correct = 0
+    total_samples = 0
+
+    for i in range(len(pred_tokens)):
+        pred_row = [x.item() for x in pred_tokens[i] if x.item() not in (0, 1, 2, 3, -100, 257152)] #special tokens ignored
+        label_row = [x.item() for x in label_tokens[i] if x.item() not in (0, 1, 2, 3, -100, 257152)]
+
+        is_correct = sorted(pred_row) == sorted(label_row)
+
+        total_samples += 1
         if is_correct:
-            overall_correct += 1
+            total_correct += 1
 
     metrics = {}
-    overall_accuracy = overall_correct / overall_total if overall_total > 0 else 0.0
-    metrics["overall_acc"] = overall_accuracy
-
-    for q_type in sorted(total_by_type.keys()):
-        if total_by_type[q_type] > 0:
-            type_accuracy = correct_by_type[q_type] / total_by_type[q_type]
-            metrics[f"{q_type}_acc"] = type_accuracy
-        else:
-            metrics[f"{q_type}_acc"] = 0.0
+    metrics["accuracy"] = total_correct/total_samples
 
     return metrics

@@ -1,15 +1,16 @@
 HOME: "/data/ai24mtech02001/projects/mech_interp_physics_reasoning/"
 
 model_train:
-  model: "google/paligemma2-3b-mix-448"
+  # model: "google/paligemma2-3b-mix-448"
+  model: "google/paligemma-3b-pt-224"
   token_compression: null # last, random, even_sampling, average, None
   target_length: null # Compressing the 1024 tokens output per image into these many tokens which are then concatenated
-  eval_batch_size: 2
+  eval_batch_size: 1
 
 data_config:
   data_path: "test_frames/"
   json_path: "miscellaneous/validation.json"
-  image_size: 448
+  image_size: 224
   num_frames: 8
-  test_size: 0
-  question_type: "all"
+  test_size: 500
+  question_type: "predictive" # all, explanatory, descriptive, predictive, counterfactual
