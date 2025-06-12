@@ -12,5 +12,5 @@ data_config:
   json_path: "miscellaneous/validation.json"
   image_size: 224
   num_frames: 8
-  test_size: 500
-  question_type: "predictive" # all, explanatory, descriptive, predictive, counterfactual
+  test_size: 2
+  question_type: "descriptive" # all, explanatory, descriptive, predictive, counterfactual

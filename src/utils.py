@@ -394,9 +394,11 @@ def make_clevrer_collate_fn(model, processor, model_config, data_config, dtype):
 
         for example in examples:
             if example['question_type'] != 'descriptive':
-                text = "ALWAYS Start your answer with 'Ans:'. Select all that apply. " + example["question"]
+                # text = "ALWAYS Start your answer with 'Ans:'. Select all that apply. " + example["question"]
+                text = f"Select all that apply. {example['question']}"
             else:
-                text = "ALWAYS Start your answer with 'Ans:'. Answer with one word or number only. " + example["question"]
+                # text = "ALWAYS Start your answer with 'Ans:'. Answer with one word or number only. " + example["question"]
+                text = f"{example['question']}"
 
             if model_config.get('token_compression') is not None:
                 num_image_tokens_calc = (model_config.get('target_length', 128) * data_config.get('num_frames', 8)) / 1024
@@ -404,8 +406,46 @@ def make_clevrer_collate_fn(model, processor, model_config, data_config, dtype):
             else:
                 image_tokens_count = data_config.get('num_frames')
 
-            image_tokens = "<image> " * image_tokens_count
-            prompt = image_tokens + text + " en"
+            task_text = "answer en \n\
+                Given frames of the simulation like \n\
+                    Frame 1: image\n\
+                    Frame 2: image\n\
+                    Frame 3: image\n\
+                    Frame 4: image\n\
+                    Frame 5: image\n\
+                    Frame 6: image\n\
+                    Frame 7: image\n\
+                    Frame 8: image\n\
+                        \n Use these frames to answer the given question."
+
+            frames_text = ""
+            for i in range(image_tokens_count):
+                frames_text = frames_text + f"Frame {i}: <image> \n"
+
+            reasoning_induction = "Example questions that may be asked:\
+                Q. What shape is the first object to collide with the metal object?\n\
+                A. cube\n\
+                \n\
+                Q. What is the color of the last object that enters the scene?\n\
+                A. yellow\n\
+                \n\
+                Q. How many collisions happen before the rubber cylinder enters the scene?\n\
+                A. 1\n\
+                \n\
+                Q. Are there any green objects that enter the scene?\n\
+                A. no\n\
+                \n\n\
+                "
+            
+            final_question = "Think step-by-step and then answer the following question. \nQ."
+
+            task_text = task_text + reasoning_induction + frames_text + final_question
+            prompt = task_text + text + "\nA."
+
+            # image_tokens = "<image> " * image_tokens_count
+            # prompt = image_tokens + text + " en"
+
+            # print(prompt)
 
             prompts.append(prompt)
             labels_text.append(example['answer'])

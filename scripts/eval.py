@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["CUDA_VISIBLE_DEVICES"] = '3'
 
 import sys
 import torch
@@ -11,6 +11,7 @@ import json
 from transformers import TrainingArguments
 from peft import PeftModel
 from collections import defaultdict
+import glob
 
 
 def get_device_map():
@@ -80,13 +81,21 @@ def main():
 
 
     train_ds, test_ds = dataset.train_test_split(
-        test_size=500,
+        test_size=data_config['test_size'],
         cache_path=split_cache_path
     )
 
-    # AUTOMATE LATER
+    # # AUTOMATE LATER
+    # if not args.base:
+    #     checkpoint_dir = os.path.join(checkpoint_dir, "checkpoint-500")
+
     if not args.base:
-        checkpoint_dir = os.path.join(checkpoint_dir, "checkpoint-500")
+        last_checkpoint = None
+        if os.path.isdir(checkpoint_dir):
+            checkpoints = list(glob.glob(os.path.join(checkpoint_dir, "checkpoint-*")))
+            if checkpoints:
+                checkpoints.sort(key=lambda x: int(x.split('-')[-1]))
+                last_checkpoint = checkpoints[-1]
 
     device = get_device_map()
     if args.base:
@@ -107,7 +116,7 @@ def main():
             token_compression=model_config.get("token_compression"),
             target_length=model_config.get("target_length")
         )
-        model = PeftModel.from_pretrained(base_model, checkpoint_dir)
+        model = PeftModel.from_pretrained(base_model, last_checkpoint)
         model.to(device)
 
     results_file = os.path.join(results_root, "eval_results.txt")
