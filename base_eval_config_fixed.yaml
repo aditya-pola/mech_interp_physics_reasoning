@@ -12,5 +12,5 @@ data_config:
   json_path: "miscellaneous/validation.json"
   image_size: 224
   num_frames: 8
-  test_size: 100  # Changed from 2 to use more samples for meaningful evaluation
+  test_size: 100  # Changed from 2 to 100 for more meaningful evaluation
   question_type: "descriptive" # all, explanatory, descriptive, predictive, counterfactual
